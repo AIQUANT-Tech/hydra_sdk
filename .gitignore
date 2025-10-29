@@ -1,0 +1,37 @@
+# Environment
+
+.env
+.env.local
+
+# Credentials
+credentials/**/*.sk
+credentials/**/*.vk
+*.sk
+*.vk
+
+# Node
+node_modules/
+dist/
+build/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Logs
+logs/
+*.log
+
+# Database
+*.sql
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
