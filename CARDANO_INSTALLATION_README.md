@@ -5,7 +5,7 @@
 Run this command:
 
 ```bash
-cd scripts
+cd bash
 chmod +x install-cardano-node.sh
 ./install-cardano-node.sh
 ```

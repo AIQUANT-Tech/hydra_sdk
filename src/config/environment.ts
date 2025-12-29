@@ -35,16 +35,30 @@ const environment = {
 
   // Platform Credentials
   PLATFORM: {
+    // hydra
     HYDRA_SIGNING_KEY:
       process.env.PLATFORM_HYDRA_SIGNING_KEY || "/path/to/platform-hydra.sk",
+    // funds
     CARDANO_SIGNING_KEY:
       process.env.PLATFORM_CARDANO_SIGNING_KEY || "/path/to/platform-funds.sk",
-
     ADDRESS_FILE:
       process.env.PLATFORM_CARDANO_ADDRESS || "/path/to/platform-address.addr",
     PEER_ADDRESS_FILE:
       process.env.PLATFORM_PEER_CARDANO_ADDRESS ||
       "/path/to/platform-peer-address.addr",
+    // Node
+    NODE_ADDRESS_FILE:
+      process.env.PLATFORM_NODE_ADDRESS ||
+      "/path/to/platform-node-address.addr",
+    PEER_NODE_ADDRESS_FILE:
+      process.env.PLATFORM_NODE_PEER_ADDRESS ||
+      "/path/to/platform-peer-node-address.addr",
+    NODE_SIGNING_KEY:
+      process.env.PLATFORM_NODE_SIGNING_KEY ||
+      "/path/to/platform-node-funds.sk",
+    PEER_NODE_SIGNING_KEY:
+      process.env.PLATFORM_NODE_PEER_SIGNING_KEY ||
+      "/path/to/platform-peer-node-funds.sk",
   },
 
   // Blockfrost (optional)
@@ -66,6 +80,9 @@ const environment = {
   JWT: {
     SECRET: process.env.JWT_SECRET || "your_jwt_secret",
     COOKIE_NAME: process.env.JWT_COOKIE_NAME || "token",
+  },
+  SMART_CONTRACT: {
+    ALWAYS_SUCCESS: process.env.ALWAYS_SUCCESS || "",
   },
 };
 

@@ -20,7 +20,7 @@ dotenv.config();
 async function stopHydraNodes() {
   try {
     console.log("\n🛑 Stopping Hydra nodes...");
-    const scriptPath = path.join(process.cwd(), "scripts/stop-hydra-nodes.sh");
+    const scriptPath = path.join(process.cwd(), "bash/stop-hydra-nodes.sh");
     await execAsync(`bash ${scriptPath}`);
     console.log("✅ Hydra nodes stopped successfully");
   } catch (error: any) {
@@ -62,7 +62,11 @@ async function startServer() {
   });
 
   // Initialize services
-  const hydraService = new HydraService(environment.HYDRA.WS_URL);
+  // Initialize Hydra service with BOTH WebSocket URLs
+  const hydraService = new HydraService(
+    environment.HYDRA.WS_URL, // platform: ws://127.0.0.1:4001
+    environment.HYDRA.WS_URL_PEER // platform-peer: ws://127.0.0.1:4002
+  );
   const cardanoService = new CardanoService();
 
   // Connect to Hydra node with retry

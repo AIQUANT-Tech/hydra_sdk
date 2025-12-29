@@ -1,3 +1,14 @@
+import {
+  applyDoubleCborEncoding,
+  Blockfrost,
+  Constr,
+  Data,
+  Lucid,
+  Network,
+  Provider,
+  Validator,
+  validatorToAddress,
+} from "@evolution-sdk/lucid";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -47,6 +58,16 @@ export class CardanoService {
       process.cwd(),
       "protocol-parameters.json"
     );
+  }
+
+  /**
+   * Get connection status for all nodes
+   */
+  getNodeStatus(): { network: string; socketPath: string } {
+    return {
+      network: environment.CARDANO.NETWORK,
+      socketPath: environment.CARDANO.SOCKET_PATH,
+    };
   }
 
   /**
@@ -240,6 +261,7 @@ export class CardanoService {
 
       const command = [
         this.cliPath,
+        "conway",
         "transaction",
         "build-raw",
         txInArgs,
@@ -272,6 +294,7 @@ export class CardanoService {
 
       const command = [
         this.cliPath,
+        "conway",
         "transaction",
         "calculate-min-fee",
         `--tx-body-file ${draftTxFile}`,
@@ -309,6 +332,8 @@ export class CardanoService {
         params.inputs.length,
         params.outputs.length + 1 // +1 for change output
       );
+
+      console.log("fee", fee);
 
       // Calculate total input
       const totalInput = params.inputs.reduce(
@@ -372,6 +397,7 @@ export class CardanoService {
 
       const command = [
         this.cliPath,
+        "conway",
         "transaction",
         "build-raw",
         txInArgs,
@@ -414,6 +440,7 @@ export class CardanoService {
 
       const command = [
         this.cliPath,
+        "conway",
         "transaction",
         "sign",
         `--tx-body-file ${txBodyFile}`,
@@ -441,6 +468,7 @@ export class CardanoService {
 
       const command = [
         this.cliPath,
+        "conway",
         "transaction",
         "submit",
         `--tx-file ${signedTxFile}`,
@@ -595,52 +623,283 @@ export class CardanoService {
   }
 
   /**
-   * Helper: Build and submit a simple payment transaction
+   * Helper: Build and submit a payment transaction (ADA only)
+   * - Uses ALL UTxOs from fromAddress
+   * - Uses `cardano-cli conway transaction build` (auto fee + change)
    */
   async sendPayment(
     fromAddress: string,
     toAddress: string,
-    amount: number,
-    signingKeyFile: string
+    amount: number, // in lovelace
+    signingKeyFile: string,
+    platformFee: number
   ): Promise<string> {
     try {
-      // Get UTxOs from sender
-      const utxos = await this.queryUtxos(fromAddress);
+      // 1) Collect all UTxOs for the sender
+      const { utxos, balance } = await this.getAddressBalance(fromAddress);
 
       if (utxos.length === 0) {
         throw new Error("No UTxOs available for payment");
       }
 
-      // Use first UTxO (in production, implement proper coin selection)
-      const input = utxos[0];
+      console.log(`Total input: ${balance} lovelace`);
+      const withdrawalAmount = amount - platformFee;
 
-      if (input.amount.lovelace < amount) {
+      if (balance < amount) {
         throw new Error(
-          `Insufficient funds in UTxO. Have ${input.amount.lovelace}, need ${amount}`
+          `Insufficient funds: have ${balance} lovelace, need at least ${amount}`
         );
       }
 
-      // Build transaction
-      const { txBodyFile } = await this.buildTransaction({
-        inputs: [input],
-        outputs: [{ address: toAddress, amount }],
-        changeAddress: fromAddress,
-      });
+      // Build `--tx-in` args like: "--tx-in hash0#ix0 --tx-in hash1#ix1 ..."
+      const txInArgs = utxos
+        .map((u) => `--tx-in ${u.txHash}#${u.txIndex}`)
+        .join(" ");
 
-      // Sign transaction
-      const signedTxFile = await this.signTransaction(txBodyFile, [
+      const networkArg =
+        this.network === "mainnet"
+          ? "--mainnet"
+          : `--testnet-magic ${this.networkMagic}`;
+
+      const txBodyFile = `/tmp/tx-body-${Date.now()}.raw`;
+      const signedTxFile = `/tmp/tx-signed-${Date.now()}.signed`;
+
+      // 2) Build the transaction (fee + change auto-calculated)
+      // Equivalent to your bash:
+      // cardano-cli conway transaction build \
+      //   $NETWORK \
+      //   --tx-in ... \
+      //   --tx-out "TO_ADDR+AMOUNT" \
+      //   --change-address FROM_ADDR \
+      //   --out-file tx.body
+      const buildCmd = [
+        this.cliPath,
+        "conway",
+        "transaction",
+        "build",
+        networkArg,
+        "--socket-path",
+        this.socketPath,
+        txInArgs,
+        `--tx-out ${toAddress}+${withdrawalAmount}`,
+        `--change-address ${fromAddress}`,
+        `--out-file ${txBodyFile}`,
+      ].join(" ");
+
+      console.log("BUILD CMD:", buildCmd);
+
+      try {
+        const { stdout, stderr } = await execAsync(buildCmd);
+        if (stderr && stderr.trim().length > 0) {
+          console.log("build stderr:", stderr);
+        }
+        if (stdout && stdout.trim().length > 0) {
+          console.log("build stdout:", stdout);
+        }
+      } catch (e: any) {
+        throw new Error(
+          `Failed to build transaction.\nCMD: ${buildCmd}\nERR: ${
+            e.message
+          }\nSTDERR: ${e.stderr ?? ""}`
+        );
+      }
+
+      // 3) Sign the transaction
+      const networkArgForSign = networkArg; // same flag
+
+      const signCmd = [
+        this.cliPath,
+        "conway",
+        "transaction",
+        "sign",
+        "--tx-body-file",
+        txBodyFile,
+        "--signing-key-file",
         signingKeyFile,
-      ]);
+        networkArgForSign,
+        "--out-file",
+        signedTxFile,
+      ].join(" ");
 
-      // Submit transaction
-      const txId = await this.submitTransaction(signedTxFile);
+      console.log("SIGN CMD:", signCmd);
 
-      // Clean up
+      try {
+        const { stdout, stderr } = await execAsync(signCmd);
+        if (stderr && stderr.trim().length > 0) {
+          console.log("sign stderr:", stderr);
+        }
+        if (stdout && stdout.trim().length > 0) {
+          console.log("sign stdout:", stdout);
+        }
+      } catch (e: any) {
+        throw new Error(
+          `Failed to sign transaction.\nCMD: ${signCmd}\nERR: ${
+            e.message
+          }\nSTDERR: ${e.stderr ?? ""}`
+        );
+      }
+
+      // 4) Submit the transaction
+      const submitCmd = [
+        this.cliPath,
+        "conway",
+        "transaction",
+        "submit",
+        networkArg,
+        "--socket-path",
+        this.socketPath,
+        "--tx-file",
+        signedTxFile,
+      ].join(" ");
+
+      console.log("SUBMIT CMD:", submitCmd);
+
+      try {
+        const { stdout, stderr } = await execAsync(submitCmd);
+        if (stderr && stderr.trim().length > 0) {
+          console.log("submit stderr:", stderr);
+        }
+        if (stdout && stdout.trim().length > 0) {
+          console.log("submit stdout:", stdout);
+        }
+      } catch (e: any) {
+        throw new Error(
+          `Failed to submit transaction.\nCMD: ${submitCmd}\nERR: ${
+            e.message
+          }\nSTDERR: ${e.stderr ?? ""}`
+        );
+      }
+
+      // 5) Get tx id (like your bash script)
+      const txIdCmd = [
+        this.cliPath,
+        "conway",
+        "transaction",
+        "txid",
+        "--tx-file",
+        signedTxFile,
+      ].join(" ");
+
+      const { stdout: txIdStdout } = await execAsync(txIdCmd);
+      const txId = txIdStdout.trim();
+      console.log("TX ID:", txId);
+
+      // Cleanup
       await fs.unlink(txBodyFile).catch(() => {});
+      await fs.unlink(signedTxFile).catch(() => {});
 
       return txId;
     } catch (error: any) {
       throw new Error(`Payment failed: ${error.message}`);
+    }
+  }
+
+  // Lock utxo's from platform fund to always sucess smart contract
+  async lockUtxos(): Promise<string> {
+    try {
+      const cbor = environment.SMART_CONTRACT.ALWAYS_SUCCESS;
+
+      const Script = applyDoubleCborEncoding(cbor);
+
+      const validator: Validator = {
+        type: "PlutusV3",
+        script: Script,
+      };
+
+      console.log(validator);
+
+      const validatorAddress = validatorToAddress("Preprod", validator);
+
+      console.log(validatorAddress);
+
+      // let's use lucid as well
+
+      const BLOCKFROST_API_URL = "https://cardano-preprod.blockfrost.io/api/v0";
+      const BLOCKFROST_API_KEY = "preprodN1EZYj11zL89jJeaAjeRybxYMLp7grmn";
+
+      const provider: Provider = new Blockfrost(
+        BLOCKFROST_API_URL,
+        BLOCKFROST_API_KEY
+      );
+
+      const network: Network = "Preprod";
+
+      const lucid = await Lucid(provider, network);
+      lucid.selectWallet.fromSeed(
+        "zebra shoot wealth song goose marine surround image school social famous solution odor praise time ski cliff marble young upset inch day search exercise"
+      );
+
+      // const tx = await lucid
+      //   .newTx()
+      //   .pay.ToAddressWithData(
+      //     validatorAddress,
+      //     undefined,
+      //     { lovelace: 200_000_000n },
+      //     validator
+      //   )
+      //   .validTo(new Date().getTime() + 15 * 60_000) // ~15 minutes
+      //   .complete();
+
+      // const txSigned = await tx.sign.withWallet().complete();
+      // const txHash = await txSigned.submit();
+
+      // console.log(txHash);
+
+      return "txHash";
+    } catch (error: any) {
+      throw new Error(`Failed to lock utxos: ${error.message}`);
+    }
+  }
+
+  async unlockUtxos(): Promise<string> {
+    try {
+      const cbor = environment.SMART_CONTRACT.ALWAYS_SUCCESS;
+
+      const Script = applyDoubleCborEncoding(cbor);
+
+      const validator: Validator = {
+        type: "PlutusV3",
+        script: Script,
+      };
+      const validatorAddress = validatorToAddress("Preprod", validator);
+
+      console.log(validatorAddress);
+
+      // let's use lucid as well
+
+      const BLOCKFROST_API_URL = "https://cardano-preprod.blockfrost.io/api/v0";
+      const BLOCKFROST_API_KEY = "preprodN1EZYj11zL89jJeaAjeRybxYMLp7grmn";
+
+      const provider: Provider = new Blockfrost(
+        BLOCKFROST_API_URL,
+        BLOCKFROST_API_KEY
+      );
+
+      const network: Network = "Preprod";
+
+      const lucid = await Lucid(provider, network);
+      lucid.selectWallet.fromSeed(
+        "zebra shoot wealth song goose marine surround image school social famous solution odor praise time ski cliff marble young upset inch day search exercise"
+      );
+
+      const validatorUtxo = await lucid.utxosAt(validatorAddress);
+      console.log(validatorUtxo.length);
+
+      const tx = await lucid
+        .newTx()
+        .collectFrom(validatorUtxo, Data.to(new Constr(0, [])))
+        .attach.Script(validator)
+        .complete();
+
+      const txSigned = await tx.sign.withWallet().complete();
+      const txHash = await txSigned.submit();
+
+      console.log(txHash);
+
+      return txHash;
+    } catch (error: any) {
+      console.log(error);
+      throw new Error(`Failed to lock utxos: ${error.message}`);
     }
   }
 }

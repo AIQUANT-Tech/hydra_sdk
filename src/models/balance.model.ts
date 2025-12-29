@@ -1,323 +1,227 @@
+// src/models/balance.model.ts
+
 import {
   DataTypes,
   Model,
-  Transaction as SequelizeTransaction,
-  Op,
-  WhereOptions,
+  Optional,
+  Transaction as SequelizeTx,
 } from "sequelize";
 import sequelize from "../config/db.config";
-import {
-  BalanceAttributes,
-  BalanceCreationAttributes,
-  BalanceType,
-} from "../types/balance.types";
-import { User } from "./user.model";
-import Transaction from "./transaction.model";
+import { BalanceType } from "../types/balance.types";
+
+export interface BalanceAttributes {
+  id: number;
+  user_id: number;
+
+  type: BalanceType; // AVAILABLE, LOCKED, etc.
+  amount: number;
+
+  asset_policy_id?: string | null;
+  asset_name?: string | null;
+
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface BalanceCreationAttributes
+  extends Optional<
+    BalanceAttributes,
+    "id" | "asset_policy_id" | "asset_name" | "created_at" | "updated_at"
+  > {}
 
 export class Balance
   extends Model<BalanceAttributes, BalanceCreationAttributes>
   implements BalanceAttributes
 {
-  public id!: number;
-  public user_id!: number;
-  public type!: BalanceType;
-  public amount!: number;
-  public asset_policy_id?: string;
-  public asset_name?: string;
-  public last_updated_tx_id?: number;
-  public created_at!: Date;
-  public updated_at!: Date;
+  declare id: number;
+  declare user_id: number;
+  declare type: BalanceType;
+  declare amount: number;
 
-  // Associations
-  public readonly user?: User;
-  public readonly last_transaction?: Transaction;
+  declare asset_policy_id: string | null;
+  declare asset_name: string | null;
 
-  // Get user's available ADA balance
-  public static async getAvailableBalance(userId: number): Promise<number> {
-    const balance = await this.findOne({
+  declare created_at: Date;
+  declare updated_at: Date;
+
+  // ─────────────────────────────────────────────
+  // STATIC HELPERS
+  // ─────────────────────────────────────────────
+
+  static async getAvailableBalance(
+    userId: number,
+    policyId: string | null,
+    assetName: string | null
+  ): Promise<number> {
+    const row = await Balance.findOne({
       where: {
         user_id: userId,
         type: BalanceType.AVAILABLE,
-        [Op.or]: [
-          { asset_policy_id: null },
-          { asset_policy_id: { [Op.is]: null } },
-        ],
-      } as WhereOptions<BalanceAttributes>,
-    });
-    return balance?.amount || 0;
-  }
-
-  // Get user's locked ADA balance
-  public static async getLockedBalance(userId: number): Promise<number> {
-    const balance = await this.findOne({
-      where: {
-        user_id: userId,
-        type: BalanceType.LOCKED,
-        [Op.or]: [
-          { asset_policy_id: null },
-          { asset_policy_id: { [Op.is]: null } },
-        ],
-      } as WhereOptions<BalanceAttributes>,
-    });
-    return balance?.amount || 0;
-  }
-
-  // Get user's total balance (all types)
-  public static async getTotalBalance(userId: number): Promise<number> {
-    const balances = await this.findAll({
-      where: {
-        user_id: userId,
-        [Op.or]: [
-          { asset_policy_id: null },
-          { asset_policy_id: { [Op.is]: null } },
-        ],
-      } as WhereOptions<BalanceAttributes>,
-    });
-    return balances.reduce((sum, b) => sum + b.amount, 0);
-  }
-
-  // Get all balances for a user (including native tokens)
-  public static async getUserBalances(userId: number): Promise<Balance[]> {
-    return this.findAll({
-      where: { user_id: userId },
-      order: [["type", "ASC"]],
-    });
-  }
-
-  // Add amount to balance
-  public static async addBalance(
-    userId: number,
-    amount: number,
-    type: BalanceType = BalanceType.AVAILABLE,
-    transactionId?: number,
-    transaction?: SequelizeTransaction
-  ): Promise<Balance> {
-    const [balance] = await this.findOrCreate({
-      where: {
-        user_id: userId,
-        type,
-        [Op.or]: [
-          { asset_policy_id: null },
-          { asset_policy_id: { [Op.is]: null } },
-        ],
-      } as WhereOptions<BalanceAttributes>,
-      defaults: {
-        user_id: userId,
-        type,
-        amount: 0,
+        asset_policy_id: policyId,
+        asset_name: assetName,
       },
-      transaction,
     });
 
-    balance.amount += amount;
-    if (transactionId) {
-      balance.last_updated_tx_id = transactionId;
-    }
-    await balance.save({ transaction });
-
-    return balance;
+    return row ? row.amount : 0;
   }
 
-  // Subtract amount from balance
-  public static async subtractBalance(
+  // atomic add
+  static async addBalance(
     userId: number,
     amount: number,
-    type: BalanceType = BalanceType.AVAILABLE,
-    transactionId?: number,
-    transaction?: SequelizeTransaction
-  ): Promise<Balance> {
-    const balance = await this.findOne({
+    type: BalanceType,
+    txId: number | null,
+    t: SequelizeTx,
+    policyId: string | null = null,
+    assetName: string | null = null
+  ) {
+    return Balance.upsertRow(
+      userId,
+      amount,
+      type,
+      txId,
+      t,
+      policyId,
+      assetName,
+      true
+    );
+  }
+
+  // atomic subtract
+  static async subtractBalance(
+    userId: number,
+    amount: number,
+    type: BalanceType,
+    txId: number | null,
+    t: SequelizeTx,
+    policyId: string | null = null,
+    assetName: string | null = null
+  ) {
+    return Balance.upsertRow(
+      userId,
+      -amount,
+      type,
+      txId,
+      t,
+      policyId,
+      assetName,
+      true
+    );
+  }
+
+  // core upsert
+  static async upsertRow(
+    userId: number,
+    delta: number,
+    type: BalanceType,
+    txId: number | null,
+    t: SequelizeTx,
+    policyId: string | null,
+    assetName: string | null,
+    allowNegative = false
+  ) {
+    const row = await Balance.findOne({
       where: {
         user_id: userId,
         type,
-        [Op.or]: [
-          { asset_policy_id: null },
-          { asset_policy_id: { [Op.is]: null } },
-        ],
-      } as WhereOptions<BalanceAttributes>,
-      transaction,
+        asset_policy_id: policyId,
+        asset_name: assetName,
+      },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
     });
 
-    if (!balance) {
-      throw new Error("Balance not found");
+    if (!row) {
+      if (delta < 0 && !allowNegative) {
+        throw new Error("Insufficient balance");
+      }
+
+      return Balance.create(
+        {
+          user_id: userId,
+          type,
+          amount: Math.max(delta, 0),
+          asset_policy_id: policyId,
+          asset_name: assetName,
+        },
+        { transaction: t }
+      );
     }
 
-    if (balance.amount < amount) {
+    const newAmount = row.amount + delta;
+    if (newAmount < 0 && !allowNegative) {
       throw new Error("Insufficient balance");
     }
 
-    balance.amount -= amount;
-    if (transactionId) {
-      balance.last_updated_tx_id = transactionId;
-    }
-    await balance.save({ transaction });
+    row.amount = newAmount;
+    await row.save({ transaction: t });
 
-    return balance;
-  }
-
-  // Lock balance (move from available to locked)
-  public static async lockBalance(
-    userId: number,
-    amount: number,
-    transactionId?: number
-  ): Promise<void> {
-    await sequelize.transaction(async (t) => {
-      await this.subtractBalance(
-        userId,
-        amount,
-        BalanceType.AVAILABLE,
-        transactionId,
-        t
-      );
-      await this.addBalance(
-        userId,
-        amount,
-        BalanceType.LOCKED,
-        transactionId,
-        t
-      );
-    });
-  }
-
-  // Unlock balance (move from locked to available)
-  public static async unlockBalance(
-    userId: number,
-    amount: number,
-    transactionId?: number
-  ): Promise<void> {
-    await sequelize.transaction(async (t) => {
-      await this.subtractBalance(
-        userId,
-        amount,
-        BalanceType.LOCKED,
-        transactionId,
-        t
-      );
-      await this.addBalance(
-        userId,
-        amount,
-        BalanceType.AVAILABLE,
-        transactionId,
-        t
-      );
-    });
-  }
-
-  // Transfer balance between users
-  public static async transferBalance(
-    fromUserId: number,
-    toUserId: number,
-    amount: number,
-    transactionId?: number
-  ): Promise<void> {
-    await sequelize.transaction(async (t) => {
-      await this.subtractBalance(
-        fromUserId,
-        amount,
-        BalanceType.AVAILABLE,
-        transactionId,
-        t
-      );
-      await this.addBalance(
-        toUserId,
-        amount,
-        BalanceType.AVAILABLE,
-        transactionId,
-        t
-      );
-    });
+    return row;
   }
 }
 
-// Initialize model
+// ─────────────────────────────────────────────
+// MODEL INIT (FIXED FOR TIMESTAMPS)
+// ─────────────────────────────────────────────
+
 Balance.init(
   {
     id: {
       type: DataTypes.INTEGER,
-      autoIncrement: true,
       primaryKey: true,
+      autoIncrement: true,
     },
+
     user_id: {
       type: DataTypes.INTEGER,
       allowNull: false,
-      references: {
-        model: "users",
-        key: "id",
-      },
-      onDelete: "CASCADE",
     },
+
     type: {
       type: DataTypes.ENUM(...Object.values(BalanceType)),
       allowNull: false,
     },
+
     amount: {
       type: DataTypes.BIGINT,
       allowNull: false,
       defaultValue: 0,
-      validate: {
-        min: 0,
-      },
     },
+
     asset_policy_id: {
       type: DataTypes.STRING(56),
       allowNull: true,
-      comment: "Policy ID for native tokens, null for ADA",
     },
+
     asset_name: {
       type: DataTypes.STRING(100),
       allowNull: true,
-      comment: "Asset name for native tokens, null for ADA",
     },
-    last_updated_tx_id: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      references: {
-        model: "transactions",
-        key: "id",
-      },
-    },
+
+    // ✔ REQUIRED FOR NOT NULL FIX
     created_at: {
       type: DataTypes.DATE,
       allowNull: false,
+      defaultValue: DataTypes.NOW,
     },
+
     updated_at: {
       type: DataTypes.DATE,
       allowNull: false,
+      defaultValue: DataTypes.NOW,
     },
   },
   {
     sequelize,
     tableName: "balances",
-    timestamps: true,
     underscored: true,
+    timestamps: true, // Sequelize auto-updates updated_at
     indexes: [
-      {
-        fields: ["user_id"],
-      },
-      {
-        fields: ["type"],
-      },
-      {
-        fields: ["user_id", "type", "asset_policy_id"],
-      },
+      { fields: ["user_id"] },
+      { fields: ["type"] },
+      { fields: ["asset_policy_id", "asset_name"] },
     ],
   }
 );
-
-// Define associations
-Balance.belongsTo(User, {
-  foreignKey: "user_id",
-  as: "user",
-});
-
-User.hasMany(Balance, {
-  foreignKey: "user_id",
-  as: "balances",
-});
-
-Balance.belongsTo(Transaction, {
-  foreignKey: "last_updated_tx_id",
-  as: "last_transaction",
-});
 
 export default Balance;

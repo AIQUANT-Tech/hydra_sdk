@@ -7,9 +7,9 @@
     "dev": "npm run check && npm run start:hydra && ts-node-dev --respawn --transpile-only src/app.ts",
     "build": "tsc",
     "start": "npm run check && npm run start:hydra && node dist/app.js",
-    "check": "bash scripts/check-prerequisites.sh",
-    "start:hydra": "bash scripts/start-hydra-node.sh",
-    "stop:hydra": "bash scripts/stop-hydra-nodes.sh",
+    "check": "bash bash/check-prerequisites.sh",
+    "start:hydra": "bash bash/start-hydra-node.sh",
+    "stop:hydra": "bash bash/stop-hydra-nodes.sh",
     "commit": "curl -X POST http://localhost:8080/api/hydra/commit-all",
     "test": "jest",
     "lint": "eslint . --ext .ts"
@@ -17,6 +17,7 @@
   "dependencies": {
     "@blockfrost/blockfrost-js": "^5.3.0",
     "@emurgo/cardano-serialization-lib-nodejs": "^11.5.0",
+    "@evolution-sdk/lucid": "^2.0.1",
     "axios": "^1.5.1",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",

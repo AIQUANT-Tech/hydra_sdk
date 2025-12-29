@@ -28,10 +28,10 @@
 Install everything with one command:
 
 ```bash
-cd scripts
+cd bash
 chmod +x install-hydra.sh
 cd ../
-./scripts/install-hydra.sh
+./bash/install-hydra.sh
 ```
 
 Then reload your shell:
@@ -74,7 +74,7 @@ source ~/.bashrc
             ├── carol-node.addr
             ├── carol-node.sk
             ├── carol-node.vk
-    └── 📁scripts
+    └── 📁bash
         ├── commit-funds.sh
         ├── connect-websocket.sh
         ├── consolidate-utxos.sh
@@ -108,7 +108,7 @@ Before using Hydra, you need a synced Cardano node. To install look cardano node
 Generate keys for each participant:
 
 ```bash
-cd scripts
+cd bash
 # Generate Alice's keys
 ./generate-keys.sh alice
 
@@ -134,7 +134,7 @@ Each participant gets:
 
 ```bash
 # Alice's addresses
-cd scripts
+cd bash
 cat ../credentials/alice/alice-node.addr    # For transaction fees
 cat ../credentials/alice/alice-funds.addr   # To commit to head
 
@@ -156,7 +156,7 @@ Fund each address:
 ### Verify Funding
 
 ```bash
-cd scripts
+cd bash
 ./wallet-balance.sh ../credentials/alice/alice-node.addr
 ./wallet-balance.sh ../credentials/alice/alice-funds.addr
 ./wallet-balance.sh ../credentials/bob/bob-node.addr
@@ -171,7 +171,7 @@ cd ../
 Configure zero fees for Hydra transactions:
 
 ```bash
-cd scripts
+cd bash
 ./setup-protocol-params.sh
 cd ../
 ```
@@ -185,7 +185,7 @@ This creates `protocol-parameters.json` with zero transaction fees.
 ### Terminal 1: Start Alice's Node
 
 ```bash
-cd scripts
+cd bash
 ./start-hydra-node.sh alice bob
 ```
 
@@ -194,7 +194,7 @@ cd scripts
 ### Terminal 2: Start Bob's Node
 
 ```bash
-cd scripts
+cd bash
 ./start-hydra-node.sh bob alice
 ```
 
@@ -215,7 +215,7 @@ Check both terminals for:
 ### Terminal 3: Connect to Alice's WebSocket
 
 ```bash
-cd scripts
+cd bash
 ./connect-websocket.sh alice
 ```
 
@@ -228,7 +228,7 @@ You'll see:
 ### Terminal 4: Connect to Bob's WebSocket
 
 ```bash
-cd scripts
+cd bash
 ./connect-websocket.sh bob
 ```
 
@@ -259,7 +259,7 @@ Press **Enter**. You'll see:
 ### Terminal 5: Commit Alice's Funds
 
 ```bash
-cd scripts
+cd bash
 ./commit-funds.sh alice 4001
 cd ../
 ```
@@ -267,7 +267,7 @@ cd ../
 ### Terminal 5: Commit Bob's Funds
 
 ```bash
-cd scripts
+cd bash
 ./commit-funds.sh bob 4002
 cd ../
 ```
@@ -290,7 +290,7 @@ Watch Terminal 3 (WebSocket). After ~20-40 seconds:
 
 ```bash
 # Alice sends 10 ADA to Bob
-cd scripts
+cd bash
 ./create-transaction.sh alice bob 10 4001
 cd ../
 ```
@@ -299,7 +299,7 @@ Copy the output and paste into Alice's WebSocket (Terminal 3).
 
 ```bash
 # Bob sends 20 ADA to Alice
-cd scripts
+cd bash
 ./create-transaction.sh bob alice 20 4002
 cd ../
 ```
@@ -402,7 +402,7 @@ Wait ~20 seconds for on-chain confirmation.
 ### Verify Final Balances
 
 ```bash
-cd scripts
+cd bash
 ./wallet-balance.sh ../credentials/alice/alice-funds.addr
 ./wallet-balance.sh ../credentials/bob/bob-funds.addr
 cd ../
@@ -428,7 +428,7 @@ cd ../
 ### Key Generation
 
 ```bash
-cd scripts
+cd bash
 ./generate-keys.sh <participant-name>
 cd ../
 ```
@@ -436,42 +436,42 @@ cd ../
 ### Check Balance
 
 ```bash
-cd scripts
+cd bash
 ./wallet-balance.sh <address-file-path>
 ```
 
 ### Setup Protocol Parameters
 
 ```bash
-cd scripts
+cd bash
 ./setup-protocol-params.sh
 ```
 
 ### Start Hydra Node
 
 ```bash
-cd scripts
+cd bash
 ./start-hydra-node.sh <participant> <peer1> [peer2...]
 ```
 
 ### Connect WebSocket
 
 ```bash
-cd scripts
+cd bash
 ./connect-websocket.sh <participant>
 ```
 
 ### Create Transaction
 
 ```bash
-cd scripts
+cd bash
 ./create-transaction.sh <from> <to> <amount-ada> <api-port>
 ```
 
 ### Commit Funds
 
 ```bash
-cd scripts
+cd bash
 ./commit-funds.sh <participant> <api-port>
 ```
 
@@ -533,11 +533,11 @@ For faster closing (testing only):
 
 ```bash
 # Terminal 1: Start Alice with 60s contestation period
-cd scripts
+cd bash
 ./start-hydra-node.sh alice bob --contestation-period 60s
 
 # Terminal 2: Start Bob with 60s contestation period
-cd scripts
+cd bash
 ./start-hydra-node.sh bob alice --contestation-period 60s
 
 ```
@@ -548,7 +548,7 @@ cd scripts
 
 ```bash
 # Generate keys
-cd scripts
+cd bash
 ./generate-keys.sh alice
 ./generate-keys.sh bob
 ./generate-keys.sh carol
@@ -588,7 +588,7 @@ cd scripts
 
 ```bash
 # Installation
-cd scripts
+cd bash
 ./install-hydra.sh
 
 # Setup

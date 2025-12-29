@@ -1,64 +1,41 @@
-import {
-  DataTypes,
-  Model,
-  InferAttributes,
-  InferCreationAttributes,
-  CreationOptional,
-} from "sequelize";
-import bcrypt from "bcrypt";
+// src/models/user.model.ts
+
+import { DataTypes, Model, Optional } from "sequelize";
 import sequelize from "../config/db.config";
-import { UserRole } from "../types/user.types";
 
-// User model class with camelCase for TypeScript compatibility
-export class User extends Model<
-  InferAttributes<User>,
-  InferCreationAttributes<User>
-> {
-  // Regular attributes
-  declare id: CreationOptional<number>;
-  declare email: string;
-  declare username: string;
-  declare password: string;
-  declare role: CreationOptional<UserRole>;
-  declare wallet_address: string | null;
-  declare balance: CreationOptional<number>;
-
-  // Timestamp attributes - use camelCase names in TypeScript
-  declare createdAt: CreationOptional<Date>;
-  declare updatedAt: CreationOptional<Date>;
-  declare deletedAt: CreationOptional<Date | null>;
-
-  // Instance method to check password
-  public async comparePassword(candidatePassword: string): Promise<boolean> {
-    return bcrypt.compare(candidatePassword, this.password);
-  }
-
-  // Override toJSON to exclude sensitive fields
-  public toJSON(): Partial<User> {
-    const values = { ...this.get() };
-    delete (values as any).password;
-    return values;
-  }
-
-  // Static method to find by email
-  public static async findByEmail(email: string): Promise<User | null> {
-    return this.findOne({ where: { email } });
-  }
-
-  // Static method to find by username
-  public static async findByUsername(username: string): Promise<User | null> {
-    return this.findOne({ where: { username } });
-  }
-
-  // Static method to find by wallet address
-  public static async findByWalletAddress(
-    walletAddress: string
-  ): Promise<User | null> {
-    return this.findOne({ where: { wallet_address: walletAddress } });
-  }
+// Define attributes interface
+export interface UserAttributes {
+  id: number;
+  walletAddress: string;
+  displayName?: string;
+  email?: string;
+  avatarUrl?: string;
+  bio?: string;
+  lastLoginAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-// Initialize model
+// Define creation attributes (id is optional on creation)
+interface UserCreationAttributes extends Optional<UserAttributes, "id"> {}
+
+// ✅ FIX: Remove class field declarations - let Sequelize manage them
+export class User
+  extends Model<UserAttributes, UserCreationAttributes>
+  implements UserAttributes
+{
+  // ✅ Only declare types, don't initialize values
+  declare id: number;
+  declare walletAddress: string;
+  declare displayName?: string;
+  declare email?: string;
+  declare avatarUrl?: string;
+  declare bio?: string;
+  declare lastLoginAt?: Date;
+  declare readonly createdAt: Date;
+  declare readonly updatedAt: Date;
+}
+
 User.init(
   {
     id: {
@@ -66,82 +43,45 @@ User.init(
       autoIncrement: true,
       primaryKey: true,
     },
-    email: {
-      type: DataTypes.STRING(100),
+    walletAddress: {
+      type: DataTypes.STRING(255),
       allowNull: false,
+      unique: true,
+      field: "wallet_address",
+    },
+    displayName: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      field: "display_name",
+    },
+    email: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
       unique: true,
       validate: {
         isEmail: true,
       },
     },
-    username: {
-      type: DataTypes.STRING(50),
-      allowNull: false,
-      unique: true,
-      validate: {
-        len: [3, 50],
-        isAlphanumeric: true,
-      },
-    },
-    password: {
-      type: DataTypes.STRING(255),
-      allowNull: false,
-      validate: {
-        len: [6, 255],
-      },
-    },
-    role: {
-      type: DataTypes.ENUM(...Object.values(UserRole)),
-      defaultValue: UserRole.USER,
-      allowNull: false,
-    },
-    wallet_address: {
-      type: DataTypes.STRING(200),
+    avatarUrl: {
+      type: DataTypes.STRING(500),
       allowNull: true,
-      unique: true,
+      field: "avatar_url",
     },
-    balance: {
-      type: DataTypes.BIGINT,
-      defaultValue: 0,
-      allowNull: false,
+    bio: {
+      type: DataTypes.TEXT,
+      allowNull: true,
     },
-    // Add timestamp fields in camelCase
-    createdAt: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      field: "created_at", // Map to snake_case column name in database
-    },
-    updatedAt: {
-      type: DataTypes.DATE,
-      allowNull: false,
-      field: "updated_at", // Map to snake_case column name in database
-    },
-    deletedAt: {
+    lastLoginAt: {
       type: DataTypes.DATE,
       allowNull: true,
-      field: "deleted_at", // Map to snake_case column name in database
+      field: "last_login_at",
     },
   },
   {
     sequelize,
     tableName: "users",
     timestamps: true,
-    underscored: true, // This converts createdAt -> created_at automatically
-    paranoid: true,
-    hooks: {
-      beforeCreate: async (user: User) => {
-        if (user.password) {
-          const salt = await bcrypt.genSalt(10);
-          user.password = await bcrypt.hash(user.password, salt);
-        }
-      },
-      beforeUpdate: async (user: User) => {
-        if (user.changed("password")) {
-          const salt = await bcrypt.genSalt(10);
-          user.password = await bcrypt.hash(user.password, salt);
-        }
-      },
-    },
+    underscored: true,
   }
 );
 
